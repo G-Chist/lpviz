@@ -4,10 +4,7 @@ import type { ViewportApi } from "@/features/viewport/runtime";
 
 export type ViewportActions = ReturnType<typeof createViewportActions>;
 
-export function createViewportActions(
-  getCanvasManager: () => ViewportApi | null,
-  initialSidebarWidth: number,
-) {
+export function createViewportActions(getCanvasManager: () => ViewportApi | null, initialSidebarWidth: number) {
   let currentSidebarWidth = initialSidebarWidth;
   const syncSidebarViewport = () => {
     const cm = getCanvasManager();
@@ -21,15 +18,10 @@ export function createViewportActions(
     const cm = getCanvasManager();
     if (!cm) return;
     const state = getState();
-    const isOpenUnbounded =
-      state.completionMode === "open" && state.polytope?.kind === "unbounded";
+    const isOpenUnbounded = state.completionMode === "open" && state.polytope?.kind === "unbounded";
     const zoomFit = collectZoomFitBounds(state);
     if (!zoomFit && !isOpenUnbounded) return;
-    cm.zoomToFit(
-      isOpenUnbounded ? cm.getUnboundedClipBounds() : zoomFit!.bounds,
-      50,
-      zoomFit?.zBounds,
-    );
+    cm.zoomToFit(isOpenUnbounded ? cm.getUnboundedClipBounds() : zoomFit!.bounds, 50, zoomFit?.zBounds);
     cm.setSidebarWidth(currentSidebarWidth);
   };
   const toggle3D = () => {
@@ -45,6 +37,13 @@ export function createViewportActions(
     setState({ zScale: value }); // zScale derives polytope+objective+trace+iterate
     const { is3DMode, isTransitioning3D } = getState();
     if (is3DMode || isTransitioning3D) cm.draw();
+  };
+  // both heatmap settings derive {objectiveHeatmap} -> the layer repaints
+  const setObjectiveHeatmapEnabled = (enabled: boolean) => {
+    setState({ objectiveHeatmapEnabled: enabled });
+  };
+  const setObjectiveHeatmapCell = (cellSize: number) => {
+    setState({ objectiveHeatmapCell: cellSize });
   };
   const setSidebarWidth = (width: number) => {
     currentSidebarWidth = width;
@@ -62,6 +61,8 @@ export function createViewportActions(
     zoomToFit,
     toggle3D,
     setZScale,
+    setObjectiveHeatmapEnabled,
+    setObjectiveHeatmapCell,
     setSidebarWidth,
     syncViewportLayout,
     getCurrentSidebarWidth: () => currentSidebarWidth,

@@ -9,6 +9,7 @@
  */
 
 export const RENDER_ORDER = {
+  heatmap: -1,
   grid: 0,
   axis: 1,
 

@@ -10,30 +10,18 @@ function st(o: Partial<State>): State {
 
 describe("deriveViewportDirty (field -> layers)", () => {
   test("polytope-group fields repaint polytope + constraints + objective", () => {
-    for (const key of [
-      "vertices",
-      "polytope",
-      "completionMode",
-      "interiorPoint",
-    ] as const) {
+    for (const key of ["vertices", "polytope", "completionMode", "interiorPoint"] as const) {
       expect(deriveViewportDirty(st({}), [key])).toEqual({
         polytope: true,
         constraints: true,
         objective: true,
+        objectiveHeatmap: true,
       });
     }
   });
 
   test("iterate fields repaint only the iterate pass", () => {
-    for (const key of [
-      "iteratePath",
-      "iterateEllipsoids",
-      "iteratePhases",
-      "iterateRestartIndices",
-      "iterateObjectiveVector",
-      "highlightIteratePathIndex",
-      "replayActive",
-    ] as const) {
+    for (const key of ["iteratePath", "iterateEllipsoids", "iteratePhases", "iterateRestartIndices", "iterateObjectiveVector", "highlightIteratePathIndex", "replayActive"] as const) {
       expect(deriveViewportDirty(st({}), [key])).toEqual({ iterate: true });
     }
   });
@@ -56,13 +44,21 @@ describe("deriveViewportDirty (field -> layers)", () => {
   test("objective change repaints objective, plus polytope in/into 3D", () => {
     expect(deriveViewportDirty(st({}), ["objectiveVector"])).toEqual({
       objective: true,
+      objectiveHeatmap: true,
     });
-    expect(
-      deriveViewportDirty(st({ is3DMode: true }), ["objectiveVector"]),
-    ).toEqual({ polytope: true, objective: true });
-    expect(
-      deriveViewportDirty(st({ isTransitioning3D: true }), ["currentObjective"]),
-    ).toEqual({ polytope: true, objective: true });
+    expect(deriveViewportDirty(st({ is3DMode: true }), ["objectiveVector"])).toEqual({ polytope: true, objective: true, objectiveHeatmap: true });
+    expect(deriveViewportDirty(st({ isTransitioning3D: true }), ["currentObjective"])).toEqual({ polytope: true, objective: true, objectiveHeatmap: true });
+  });
+
+  test("objective heatmap fields repaint the heatmap only", () => {
+    expect(deriveViewportDirty(st({}), ["objectiveHeatmapEnabled"])).toEqual({ objectiveHeatmap: true });
+    expect(deriveViewportDirty(st({}), ["objectiveHeatmapCell"])).toEqual({
+      objectiveHeatmap: true,
+    });
+    expect(deriveViewportDirty(st({}), ["objectiveHidden"])).toEqual({
+      objective: true,
+      objectiveHeatmap: true,
+    });
   });
 
   test("zScale repaints every world-anchored layer", () => {
@@ -75,9 +71,7 @@ describe("deriveViewportDirty (field -> layers)", () => {
   });
 
   test("union of multiple changed fields", () => {
-    expect(
-      deriveViewportDirty(st({}), ["iteratePath", "traceBuffer"]),
-    ).toEqual({ iterate: true, trace: true });
+    expect(deriveViewportDirty(st({}), ["iteratePath", "traceBuffer"])).toEqual({ iterate: true, trace: true });
   });
 
   test("pure UI / solver-config fields repaint nothing", () => {

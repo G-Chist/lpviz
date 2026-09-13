@@ -13,6 +13,7 @@ import { IterateLineLayer } from "@/three/layers/IterateLineLayer";
 import { IteratePointsLayer } from "@/three/layers/IteratePointsLayer";
 import { IterateRestartPointsLayer } from "@/three/layers/IterateRestartPointsLayer";
 import { IterateStarLayer } from "@/three/layers/IterateStarLayer";
+import { ObjectiveHeatmapLayer } from "@/three/layers/ObjectiveHeatmapLayer";
 import { ObjectiveLayer } from "@/three/layers/ObjectiveLayer";
 import { PolytopeBaseLayer } from "@/three/layers/PolytopeBaseLayer";
 import { PolytopeRubberBandLayer } from "@/three/layers/PolytopeRubberBandLayer";
@@ -21,11 +22,7 @@ import { SolverStartLayer } from "@/three/layers/SolverStartLayer";
 import { TraceLineLayer } from "@/three/layers/TraceLineLayer";
 import { TracePointsLayer } from "@/three/layers/TracePointsLayer";
 
-export function mountCanvasGL(
-  parent: HTMLElement,
-  onBridgeReady: (bridge: ViewportBridge) => void,
-  onBridgeDispose?: () => void,
-) {
+export function mountCanvasGL(parent: HTMLElement, onBridgeReady: (bridge: ViewportBridge) => void, onBridgeDispose?: () => void) {
   const canvas = document.createElement("canvas");
   canvas.className = "canvas-stage__gl-canvas";
   canvas.tabIndex = 0;
@@ -36,23 +33,7 @@ export function mountCanvasGL(
   const cameraCtl = new CameraController(mgr);
   const controlsCtl = new ControlsController(mgr);
   const materialsCtl = new SharedMaterialsController(mgr);
-  const layers: Layer[] = [
-    new GridLayer(),
-    new PolytopeBaseLayer(),
-    new PolytopeRubberBandLayer(),
-    new ObjectiveLayer(),
-    new ConstraintHighlightLayer(),
-    new PolytopeVerticesLayer(),
-    new TraceLineLayer(),
-    new TracePointsLayer(),
-    new EllipsoidLayer(),
-    new IterateLineLayer(),
-    new IteratePointsLayer(),
-    new IterateRestartPointsLayer(),
-    new IterateHighlightLayer(),
-    new IterateStarLayer(),
-    new SolverStartLayer(),
-  ];
+  const layers: Layer[] = [new ObjectiveHeatmapLayer(), new GridLayer(), new PolytopeBaseLayer(), new PolytopeRubberBandLayer(), new ObjectiveLayer(), new ConstraintHighlightLayer(), new PolytopeVerticesLayer(), new TraceLineLayer(), new TracePointsLayer(), new EllipsoidLayer(), new IterateLineLayer(), new IteratePointsLayer(), new IterateRestartPointsLayer(), new IterateHighlightLayer(), new IterateStarLayer(), new SolverStartLayer()];
   for (const l of layers) mgr.addLayer(l);
   onBridgeReady({
     getCanvasElement: () => canvas,

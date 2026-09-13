@@ -44,10 +44,7 @@ export function boot(root: HTMLElement) {
   const applyLayoutMode = () => {
     mobileLayout = mobileQuery.matches;
     root.classList.toggle("mobile-layout", mobileLayout);
-    root.style.setProperty(
-      "--mobile-sidebar-height",
-      `${mobileSidebarHeight}px`,
-    );
+    root.style.setProperty("--mobile-sidebar-height", `${mobileSidebarHeight}px`);
   };
   applyLayoutMode();
 
@@ -84,6 +81,8 @@ export function boot(root: HTMLElement) {
     resetView: viewport.resetView,
     toggle3D: viewport.toggle3D,
     setZScale: viewport.setZScale,
+    setObjectiveHeatmapEnabled: viewport.setObjectiveHeatmapEnabled,
+    setObjectiveHeatmapCell: viewport.setObjectiveHeatmapCell,
 
     setActiveSolverMode: (mode) => solver.setActiveSolverMode(mode, true),
     setSidebarWidth: viewport.setSidebarWidth,
@@ -146,14 +145,8 @@ export function boot(root: HTMLElement) {
   const onResizeStart = (startEvent: PointerEvent) => {
     if (mobileLayout) {
       const applyHeight = (clientY: number) => {
-        mobileSidebarHeight = Math.max(
-          180,
-          Math.min(window.innerHeight * 0.72, window.innerHeight - clientY),
-        );
-        root.style.setProperty(
-          "--mobile-sidebar-height",
-          `${mobileSidebarHeight}px`,
-        );
+        mobileSidebarHeight = Math.max(180, Math.min(window.innerHeight * 0.72, window.innerHeight - clientY));
+        root.style.setProperty("--mobile-sidebar-height", `${mobileSidebarHeight}px`);
         viewport.setSidebarWidth(0);
         stage.updateLayout();
       };
@@ -214,10 +207,7 @@ export function boot(root: HTMLElement) {
   const stage = mountCanvasStage(root, ctx, onResizeStart);
 
   const onResize = () => {
-    mobileSidebarHeight = Math.min(
-      mobileSidebarHeight,
-      window.innerHeight * 0.72,
-    );
+    mobileSidebarHeight = Math.min(mobileSidebarHeight, window.innerHeight * 0.72);
     applyLayoutMode();
     viewport.syncViewportLayout(getViewportSidebarWidth());
     stage.updateLayout();
