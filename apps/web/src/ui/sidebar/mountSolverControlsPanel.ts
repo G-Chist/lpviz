@@ -10,6 +10,12 @@ import {
 import { el } from "@/ui/dom";
 import { isObjectiveDirectionUnbounded } from "@lpviz/polytope/objectiveDirection";
 import { hasPolytopeLines } from "@lpviz/polytope/polytopeTypes";
+import {
+  ENTERING_RULES,
+  LEAVING_RULES,
+  type EnteringRule,
+  type LeavingRule,
+} from "@lpviz/solver-engine/simplex";
 
 const MAXIT_LOG_MIN = 0,
   MAXIT_LOG_MAX = 5,
@@ -24,8 +30,29 @@ const sliderValueToMaxit = (value: string) =>
 const NUMBER_FORMAT = new Intl.NumberFormat("en-US");
 const fmt = (value: number) => NUMBER_FORMAT.format(value);
 
+// The rule vocabulary comes from the engine; a Record turns a rule without a
+// label into a compile error.
+const ENTERING_RULE_LABELS: Record<EnteringRule, string> = {
+  coeff: "Dantzig",
+  first: "Bland (low)",
+  last: "Bland (high)",
+};
+const LEAVING_RULE_LABELS: Record<LeavingRule, string> = {
+  first: "Lowest index",
+  last: "Highest index",
+};
+const ENTERING_RULE_OPTIONS = ENTERING_RULES.map((value) => ({
+  value,
+  text: ENTERING_RULE_LABELS[value],
+}));
+const LEAVING_RULE_OPTIONS = LEAVING_RULES.map((value) => ({
+  value,
+  text: LEAVING_RULE_LABELS[value],
+}));
+
 type MaxitSettingKey = Extract<keyof SolverSettings, "maxitIPM" | "maxitPDHG">;
 type SettingsSync = (state: State) => void;
+type SettingField = HTMLInputElement | HTMLSelectElement;
 
 type SolverButtonUiState = {
   active: boolean;
@@ -51,6 +78,22 @@ function checkbox(id: string, onChange: (v: boolean) => void) {
   }) as HTMLInputElement;
   i.addEventListener("change", () => onChange(i.checked));
   return i;
+}
+function dropdown<T extends string>(
+  id: string,
+  options: readonly { value: T; text: string }[],
+  initial: T,
+  onChange: (v: T) => void,
+) {
+  const s = el("select", {
+    attrs: { id, autocomplete: "off" },
+  }) as HTMLSelectElement;
+  for (const opt of options) {
+    s.append(el("option", { attrs: { value: opt.value }, text: opt.text }));
+  }
+  s.value = initial;
+  s.addEventListener("change", () => onChange(s.value as T));
+  return s;
 }
 function labeled(
   text: string,
@@ -91,7 +134,7 @@ export function mountSolverControlsPanel(parent: HTMLElement, ctx: AppContext) {
   let renderedMode: SolverMode | null = null;
   let syncSettings: SettingsSync = () => {};
 
-  function setInputValue(input: HTMLInputElement, value: string) {
+  function setInputValue(input: SettingField, value: string) {
     if (document.activeElement !== input) input.value = value;
   }
 
@@ -289,6 +332,24 @@ export function mountSolverControlsPanel(parent: HTMLElement, ctx: AppContext) {
         ctx.actions.recomputeIfModeActive("simplex");
       });
       dual.checked = st.simplexDualMode;
+      const entering = dropdown(
+        "simplexEnteringRule",
+        ENTERING_RULE_OPTIONS,
+        st.simplexEnteringRule,
+        (v) => {
+          ctx.actions.updateSolverSetting("simplexEnteringRule", v);
+          ctx.actions.recomputeIfModeActive("simplex");
+        },
+      );
+      const leaving = dropdown(
+        "simplexLeavingRule",
+        LEAVING_RULE_OPTIONS,
+        st.simplexLeavingRule,
+        (v) => {
+          ctx.actions.updateSolverSetting("simplexLeavingRule", v);
+          ctx.actions.recomputeIfModeActive("simplex");
+        },
+      );
       sec.append(
         el("div", { className: "settings-checkbox-row" }, [
           el(
@@ -297,9 +358,18 @@ export function mountSolverControlsPanel(parent: HTMLElement, ctx: AppContext) {
             [dual],
           ),
         ]),
+        // label + dropdown on one line, selects aligned via a 2-column grid
+        el("div", { className: "settings-select-grid" }, [
+          el("label", { attrs: { for: "simplexEnteringRule" }, text: "Entering:" }),
+          entering,
+          el("label", { attrs: { for: "simplexLeavingRule" }, text: "Leaving:" }),
+          leaving,
+        ]),
       );
       return (s) => {
         dual.checked = s.solverSettings.simplexDualMode;
+        setInputValue(entering, s.solverSettings.simplexEnteringRule);
+        setInputValue(leaving, s.solverSettings.simplexLeavingRule);
       };
     }
 

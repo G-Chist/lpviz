@@ -1,10 +1,13 @@
 import type { CompletionMode, SolverMode, State } from "@/features/core/store";
+import type { EnteringRule, LeavingRule } from "@lpviz/solver-engine/simplex";
 
 export type ShareSettings = {
   alphaMax?: number;
   correctorThreshold?: number;
   maxitIPM?: number;
   simplexDualMode?: boolean;
+  simplexEnteringRule?: EnteringRule;
+  simplexLeavingRule?: LeavingRule;
   pdhgEta?: number;
   pdhgTau?: number;
   maxitPDHG?: number;
@@ -26,6 +29,10 @@ export type SharedAppState = {
   is3DMode?: boolean;
 };
 
+// Short keys are permanent once a link has been shared with them, so never
+// reuse a retired one: "w" (ipmColorByPhase) and "u" (zAxisOffsetOnly) still
+// appear in old links, and open branches have claimed "n", "u", "w", "z", "P"
+// and "Q". Pick an unused letter (case matters) for anything new.
 const shareKeyMap = {
   vertices: "v",
   completionMode: "k",
@@ -40,6 +47,8 @@ const shareKeyMap = {
   correctorThreshold: "f",
   maxitIPM: "i",
   simplexDualMode: "d",
+  simplexEnteringRule: "E",
+  simplexLeavingRule: "L",
   pdhgEta: "e",
   pdhgTau: "t",
   maxitPDHG: "p",

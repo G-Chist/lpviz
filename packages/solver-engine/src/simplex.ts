@@ -6,11 +6,57 @@ import {
 } from "@lpviz/math/blas";
 import { solveDenseSystem } from "@lpviz/math/lapack";
 import type { Lines, Vec2N, Vec2Ns, VecN } from "@lpviz/math/types";
-import { fmtE, fmtF, fmtInt } from "./fmt";
+import { fmtE, fmtF, fmtStr } from "./fmt";
 
 const MAX_ITERATIONS = 100_000;
 
 type SimplexStatus = "optimal" | "unbounded" | "infeasible";
+
+/**
+ * Pivot-selection rules for the entering variable (the UI labels them
+ * Dantzig / Bland (low) / Bland (high)):
+ *  - "coeff": the non-basic column with the largest positive reduced cost
+ *    (Dantzig's rule); ties break to the lowest column index.
+ *  - "first": the lowest-index non-basic column with a positive reduced cost
+ *    (Bland's rule). Paired with leaving rule "first" it provably never
+ *    cycles, which is why it is the default.
+ *  - "last": the highest-index such column.
+ */
+export const ENTERING_RULES = ["coeff", "first", "last"] as const;
+export type EnteringRule = (typeof ENTERING_RULES)[number];
+
+/**
+ * Tie-break for the ratio test (leaving variable): among rows within `tol` of
+ * the minimum ratio, "first" keeps the lowest original column index and
+ * "last" the highest.
+ */
+export const LEAVING_RULES = ["first", "last"] as const;
+export type LeavingRule = (typeof LEAVING_RULES)[number];
+
+type PivotRules = { entering: EnteringRule; leaving: LeavingRule };
+
+// Bland's rule on both sides: the default, and the only combination with a
+// termination guarantee.
+const BLAND_RULES: PivotRules = { entering: "first", leaving: "first" };
+
+export const isEnteringRule = (value: unknown): value is EnteringRule =>
+  (ENTERING_RULES as readonly unknown[]).includes(value);
+export const isLeavingRule = (value: unknown): value is LeavingRule =>
+  (LEAVING_RULES as readonly unknown[]).includes(value);
+
+// Unknown values (e.g. from a hand-edited share link) degrade to the default.
+function resolvePivotRules(
+  opts: Pick<SimplexOptions, "enteringRule" | "leavingRule">,
+): PivotRules {
+  return {
+    entering: isEnteringRule(opts.enteringRule)
+      ? opts.enteringRule
+      : BLAND_RULES.entering,
+    leaving: isLeavingRule(opts.leavingRule)
+      ? opts.leavingRule
+      : BLAND_RULES.leaving,
+  };
+}
 
 interface SimplexOptions {
   tol: number;
@@ -23,6 +69,10 @@ interface SimplexOptions {
    * slackness), so dual simplex mode ignores it.
    */
   startVertex?: number[];
+  /** Entering-variable pivot rule (see ENTERING_RULES). Defaults to "first" (Bland). */
+  enteringRule?: EnteringRule;
+  /** Ratio-test tie-break (see LEAVING_RULES). Defaults to "first" (lowest index). */
+  leavingRule?: LeavingRule;
 }
 
 function createDenseMatrix(rows: number, cols: number, fill = 0): DenseMatrix {
@@ -191,8 +241,121 @@ function buildBasisState(
   };
 }
 
+function selectEnteringIndex(
+  basis: boolean[],
+  reducedCosts: Float64Array,
+  tol: number,
+  rule: EnteringRule,
+): number {
+  if (rule === "first") {
+    for (let j = 0; j < reducedCosts.length; j++) {
+      if (!basis[j] && reducedCosts[j]! > tol) return j;
+    }
+    return -1;
+  }
+  if (rule === "last") {
+    for (let j = reducedCosts.length - 1; j >= 0; j--) {
+      if (!basis[j] && reducedCosts[j]! > tol) return j;
+    }
+    return -1;
+  }
+  let best = -1;
+  let bestCost = -Infinity;
+  for (let j = 0; j < reducedCosts.length; j++) {
+    if (basis[j] || reducedCosts[j]! <= tol) continue;
+    // strict `>` keeps the lowest index on ties
+    if (reducedCosts[j]! > bestCost) {
+      bestCost = reducedCosts[j]!;
+      best = j;
+    }
+  }
+  return best;
+}
+
+function selectLeavingIndex(
+  xB: Float64Array,
+  direction: Float64Array,
+  basisIndices: number[],
+  tol: number,
+  rule: LeavingRule,
+): number {
+  // Pass 1: the minimum ratio over the rows the entering variable drives down.
+  let minRatio = Infinity;
+  for (let i = 0; i < xB.length; i++) {
+    if (direction[i]! <= tol) continue;
+    minRatio = Math.min(minRatio, xB[i]! / direction[i]!);
+  }
+  if (minRatio === Infinity) return -1;
+
+  // Pass 2: among rows within tol of that minimum, break the tie by original
+  // column index. A second pass keeps the tie set anchored to the true minimum
+  // rather than to whichever near-tie happened to be scanned first.
+  let leave = -1;
+  let chosenIndex = -1;
+  for (let i = 0; i < xB.length; i++) {
+    if (direction[i]! <= tol) continue;
+    if (xB[i]! / direction[i]! - minRatio >= tol) continue;
+    const originalIndex = basisIndices[i]!;
+    const prefer =
+      leave === -1 ||
+      (rule === "first"
+        ? originalIndex < chosenIndex
+        : originalIndex > chosenIndex);
+    if (prefer) {
+      leave = i;
+      chosenIndex = originalIndex;
+    }
+  }
+  return leave;
+}
+
+// A pivot is degenerate when the entering variable cannot increase at all
+// (minimum ratio ~ 0): the basis changes but the vertex does not. Cycling is a
+// run of degenerate pivots that revisits a basis, and only Bland's rule
+// (lowest index entering and leaving) is guaranteed to avoid it. Rather than
+// letting the other rules spin until MAX_ITERATIONS, both simplex loops count
+// consecutive degenerate pivots and fall back to Bland's rule for the rest of
+// the phase once the count exceeds this limit. Iterations pivoted under the
+// fallback carry a "d" after their number in the log, the way PDHG marks
+// Halpern restarts with "r". A legitimately degenerate vertex in the app's
+// 2-D/3-D problems needs only a handful of degenerate pivots, and a false
+// trigger merely changes the pivot rule.
+const MAX_CONSECUTIVE_DEGENERATE_PIVOTS = 25;
+
+// Iteration column of a log row: "12" normally, "12d" while the cycling guard
+// has forced Bland's rule (see MAX_CONSECUTIVE_DEGENERATE_PIVOTS).
+const iterationLabel = (iteration: number, guarded: boolean) =>
+  fmtStr(guarded ? `${iteration}d` : `${iteration}`, 5);
+
+function createCyclingGuard(initial: PivotRules, tol: number) {
+  const rules: PivotRules = { ...initial };
+  let degeneratePivots = 0;
+  let active = false;
+  return {
+    rules,
+    /** True once the guard has switched this phase to Bland's rule. */
+    get active() {
+      return active;
+    },
+    /** Record the step length (minimum ratio) of the pivot just taken. */
+    recordPivot(step: number) {
+      degeneratePivots = step <= tol ? degeneratePivots + 1 : 0;
+      if (active || degeneratePivots <= MAX_CONSECUTIVE_DEGENERATE_PIVOTS) return;
+      if (
+        rules.entering === BLAND_RULES.entering &&
+        rules.leaving === BLAND_RULES.leaving
+      )
+        return;
+      rules.entering = BLAND_RULES.entering;
+      rules.leaving = BLAND_RULES.leaving;
+      active = true;
+    },
+  };
+}
+
 function formatIterationLog(
   iteration: number,
+  guarded: boolean,
   xTableau: Float64Array,
   objective: number,
   basis: boolean[],
@@ -200,7 +363,7 @@ function formatIterationLog(
 ) {
   const x0 = nOrig >= 1 ? (xTableau[0] ?? 0) - (xTableau[nOrig] ?? 0) : 0;
   const y0 = nOrig >= 2 ? (xTableau[1] ?? 0) - (xTableau[nOrig + 1] ?? 0) : 0;
-  return `${fmtInt(iteration, 5)} ${fmtF(x0, 8, 2)} ${fmtF(y0, 8, 2)} ${fmtE(objective, 10, 1)} ${basisString(basis)}\n`;
+  return `${iterationLabel(iteration, guarded)} ${fmtF(x0, 8, 2)} ${fmtF(y0, 8, 2)} ${fmtE(objective, 10, 1)} ${basisString(basis)}\n`;
 }
 
 function recoverPrimalPointFromDualBasis(
@@ -234,9 +397,10 @@ function simplexCoreStandard(
     verbose: boolean;
     pointFromBasis: (basisIndices: number[]) => [number, number];
     completionLabel: string;
+    pivotRules: PivotRules;
   },
 ) {
-  const { tol, verbose, pointFromBasis, completionLabel } = cfg;
+  const { tol, verbose, pointFromBasis, completionLabel, pivotRules } = cfg;
   const mRows = A.rows;
   const nCols = A.cols;
   let basis = basisInit.slice();
@@ -247,6 +411,7 @@ function simplexCoreStandard(
 
   if (verbose) console.log(header);
   logs.push(header);
+  const guard = createCyclingGuard(pivotRules, tol);
 
   let iteration = 0;
   let status: SimplexStatus = "optimal";
@@ -264,39 +429,28 @@ function simplexCoreStandard(
     objective = state.objective;
 
     const [x, y] = pointFromBasis(state.basisIndices);
-    const line = `${fmtInt(iteration, 5)} ${fmtF(x, 8, 2)} ${fmtF(y, 8, 2)} ${fmtE(objective, 10, 1)} ${basisString(basis)}\n`;
+    const line = `${iterationLabel(iteration, guard.active)} ${fmtF(x, 8, 2)} ${fmtF(y, 8, 2)} ${fmtE(objective, 10, 1)} ${basisString(basis)}\n`;
     if (verbose) console.log(line);
     logs.push(line);
 
-    let enterIndex = -1;
-    for (let j = 0; j < nCols; j++) {
-      if (!basis[j] && state.reducedCosts[j]! > tol) {
-        enterIndex = j;
-        break;
-      }
-    }
+    const enterIndex = selectEnteringIndex(
+      basis,
+      state.reducedCosts,
+      tol,
+      guard.rules.entering,
+    );
     if (enterIndex === -1) break;
 
     extractColumn(A, enterIndex, enterColumn);
     solveDenseSystem(state.B.data, state.B.rows, enterColumn, direction);
 
-    let leaveBasisIndex = -1;
-    let minRatio = Infinity;
-    let smallestLeavingIndex = Infinity;
-    for (let i = 0; i < mRows; i++) {
-      if (direction[i]! <= tol) continue;
-      const ratio = state.xB[i]! / direction[i]!;
-      const originalIndex = state.basisIndices[i]!;
-      if (
-        ratio < minRatio - tol ||
-        (Math.abs(ratio - minRatio) < tol &&
-          originalIndex < smallestLeavingIndex)
-      ) {
-        minRatio = ratio;
-        leaveBasisIndex = i;
-        smallestLeavingIndex = originalIndex;
-      }
-    }
+    const leaveBasisIndex = selectLeavingIndex(
+      state.xB,
+      direction,
+      state.basisIndices,
+      tol,
+      guard.rules.leaving,
+    );
 
     if (leaveBasisIndex === -1) {
       const message = "LP is unbounded. No leaving variable found.";
@@ -306,6 +460,7 @@ function simplexCoreStandard(
       break;
     }
 
+    guard.recordPivot(state.xB[leaveBasisIndex]! / direction[leaveBasisIndex]!);
     basis[enterIndex] = true;
     basis[state.basisIndices[leaveBasisIndex]!] = false;
   }
@@ -336,9 +491,10 @@ function simplexCore(
     phase1: boolean;
     nOrig: number;
     m: number;
+    pivotRules: PivotRules;
   },
 ) {
-  const { tol, verbose, phase1, nOrig, m } = cfg;
+  const { tol, verbose, phase1, nOrig, m, pivotRules } = cfg;
   const mRows = A.rows;
   const nCols = A.cols;
 
@@ -354,6 +510,7 @@ function simplexCore(
   const header = `${"Iter".padStart(5)} ${"x".padStart(8)} ${"y".padStart(8)} ${"Obj".padStart(10)} ${"basis".padEnd(nCols, " ")}\n`;
   if (verbose) console.log(header);
   logs.push(header);
+  const guard = createCyclingGuard(pivotRules, tol);
 
   let iteration = 0;
   let xTableau = new Float64Array(nCols);
@@ -375,6 +532,7 @@ function simplexCore(
 
     const line = formatIterationLog(
       iteration,
+      guard.active,
       xTableau,
       objective,
       basis,
@@ -383,35 +541,24 @@ function simplexCore(
     if (verbose) console.log(line);
     logs.push(line);
 
-    let enterIndex = -1;
-    for (let j = 0; j < nCols; j++) {
-      if (!basis[j] && state.reducedCosts[j]! > tol) {
-        enterIndex = j;
-        break;
-      }
-    }
+    const enterIndex = selectEnteringIndex(
+      basis,
+      state.reducedCosts,
+      tol,
+      guard.rules.entering,
+    );
     if (enterIndex === -1) break;
 
     extractColumn(A, enterIndex, enterColumn);
     solveDenseSystem(state.B.data, state.B.rows, enterColumn, direction);
 
-    let leaveIndexInBasis = -1;
-    let minRatio = Infinity;
-    let smallestLeavingOriginalIndex = Infinity;
-    for (let i = 0; i < mRows; i++) {
-      if (direction[i]! <= tol) continue;
-      const ratio = state.xB[i]! / direction[i]!;
-      const originalIndex = basisIndices[i]!;
-      if (
-        ratio < minRatio - tol ||
-        (Math.abs(ratio - minRatio) < tol &&
-          originalIndex < smallestLeavingOriginalIndex)
-      ) {
-        minRatio = ratio;
-        leaveIndexInBasis = i;
-        smallestLeavingOriginalIndex = originalIndex;
-      }
-    }
+    const leaveIndexInBasis = selectLeavingIndex(
+      state.xB,
+      direction,
+      basisIndices,
+      tol,
+      guard.rules.leaving,
+    );
 
     if (leaveIndexInBasis === -1) {
       const message = "LP is unbounded. No leaving variable found.";
@@ -421,6 +568,7 @@ function simplexCore(
       break;
     }
 
+    guard.recordPivot(state.xB[leaveIndexInBasis]! / direction[leaveIndexInBasis]!);
     basis[enterIndex] = true;
     basis[basisIndices[leaveIndexInBasis]!] = false;
   }
@@ -448,6 +596,13 @@ function simplexCore(
   };
 }
 
+// Drives any artificial variable still basic at the end of Phase 1 out of the
+// basis by swapping in the lowest-index original column with a nonzero pivot.
+// This is deliberately independent of the selected pivot rules: it is a basis
+// repair step, not an objective-improving pivot, so the rules only govern the
+// two simplex loops. (Primal mode reaches this loop only for zero-area regions,
+// which the app rejects; dual mode reaches it when the objective is exactly
+// parallel to a constraint normal.)
 function pivotOutArtificialVariables(
   phase1Matrix: DenseMatrix,
   bVec: Float64Array,
@@ -505,9 +660,9 @@ function solveDualMode(
   primalA: DenseMatrix,
   primalB: Float64Array,
   objective: Float64Array,
-  opts: Pick<SimplexOptions, "tol" | "verbose">,
+  cfg: { tol: number; verbose: boolean; pivotRules: PivotRules },
 ) {
-  const { tol, verbose } = opts;
+  const { tol, verbose, pivotRules } = cfg;
   const dualAFull = transposeMatrix(primalA);
   const bDualFull = Float64Array.from(objective);
 
@@ -564,6 +719,7 @@ function solveDualMode(
     verbose,
     pointFromBasis: dualPointFromBasis,
     completionLabel: "Phase 1",
+    pivotRules,
   });
 
   if (Math.abs(phase1.objective) > tol) {
@@ -598,6 +754,7 @@ function solveDualMode(
     verbose,
     pointFromBasis: dualPointFromBasis,
     completionLabel: "Phase 2",
+    pivotRules,
   });
 
   // An unbounded dual means the primal LP being visualized is infeasible.
@@ -689,6 +846,7 @@ function warmStartBasisFromVertex(
 
 export function simplex(lines: Lines, objective: VecN, opts: SimplexOptions) {
   const { tol, verbose, dual, startVertex } = opts;
+  const pivotRules = resolvePivotRules(opts);
   const { A: aOriginal, b } = linesToDenseAb(lines);
   const m = aOriginal.rows;
   const n = aOriginal.cols;
@@ -696,7 +854,11 @@ export function simplex(lines: Lines, objective: VecN, opts: SimplexOptions) {
 
   if (dual) {
     return {
-      ...solveDualMode(lines, aOriginal, b, cObjective, { tol, verbose }),
+      ...solveDualMode(lines, aOriginal, b, cObjective, {
+        tol,
+        verbose,
+        pivotRules,
+      }),
       mode: "dual" as const,
     };
   }
@@ -753,6 +915,7 @@ export function simplex(lines: Lines, objective: VecN, opts: SimplexOptions) {
         phase1: false,
         nOrig: n,
         m,
+        pivotRules,
       },
     );
     return {
@@ -777,6 +940,7 @@ export function simplex(lines: Lines, objective: VecN, opts: SimplexOptions) {
     phase1: true,
     nOrig: n,
     m,
+    pivotRules,
   });
 
   const phase2Basis = pivotOutArtificialVariables(
@@ -799,6 +963,7 @@ export function simplex(lines: Lines, objective: VecN, opts: SimplexOptions) {
       phase1: false,
       nOrig: n,
       m,
+      pivotRules,
     },
   );
 
