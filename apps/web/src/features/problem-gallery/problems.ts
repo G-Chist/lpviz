@@ -13,7 +13,7 @@ export type GalleryProblem = {
 type Rng = () => number;
 
 const RANDOM_POLYGON_MIN_VERTICES = 4;
-const RANDOM_POLYGON_MAX_VERTICES = 64;
+const RANDOM_POLYGON_MAX_VERTICES = 255;
 const DEFAULT_RANDOM_POLYGON_VERTICES = 20;
 const RANDOM_POLYGON_SCALE = 24;
 const RANDOM_POLYGON_MAX_TRIES = 40;
@@ -129,7 +129,7 @@ function createRandomConvexPolygonProblem(count: number, rng: Rng = Math.random)
   const vertices = randomConvexPolygon(count, rng);
   return {
     id: "random-convex-polygon",
-    name: "Random Convex Polygon",
+    name: "Random Convex",
     vertices,
     interiorPoint: convexCentroid(vertices),
     objectiveVector: randomObjective(rng),
