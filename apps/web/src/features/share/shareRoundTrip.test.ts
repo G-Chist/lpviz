@@ -245,6 +245,8 @@ describe("share link round-trip stability", () => {
 
       const final = roundTripN(original, ROUND_TRIPS);
 
+      expect(final.vertices.length).toBe(original.vertices.length);
+
       // convexity
       const vrep = VRep.fromPoints(final.vertices);
       expect(vrep.isConvex()).toBe(true);
@@ -278,6 +280,8 @@ describe("share link round-trip stability", () => {
       const originalOptimum = bruteForceOptimum(vertices, objective);
       const final = roundTripN(original, ROUND_TRIPS);
 
+      expect(final.vertices.length).toBe(original.vertices.length);
+
       const vrep = VRep.fromPoints(final.vertices);
       expect(vrep.isConvex()).toBe(true);
 
@@ -308,14 +312,16 @@ describe("share link round-trip stability", () => {
       original.objective!,
     );
 
-    let current = original;
-    for (let i = 0; i < ROUND_TRIPS; i++) {
-      const encoded = encodeSharedState(current);
-      const decoded = decodeSharedState(encoded);
-      expect(decoded).not.toBeNull();
-      current = decoded!;
+let current = original;
+      for (let i = 0; i < ROUND_TRIPS; i++) {
+        const encoded = encodeSharedState(current);
+        const decoded = decodeSharedState(encoded);
+        expect(decoded).not.toBeNull();
+        current = decoded!;
 
-      const vrep = VRep.fromPoints(current.vertices);
+        expect(current.vertices.length).toBe(original.vertices.length);
+
+        const vrep = VRep.fromPoints(current.vertices);
       expect(vrep.isConvex()).toBe(true);
 
       const solved = solveForOptimum(current.vertices, current.objective!);
@@ -348,6 +354,8 @@ describe("share link round-trip stability", () => {
 
         const originalOptimum = bruteForceOptimum(vertices, objective);
         const final = roundTripN(original, ROUND_TRIPS);
+
+        expect(final.vertices.length).toBe(original.vertices.length);
 
         const vrep = VRep.fromPoints(final.vertices);
         expect(vrep.isConvex()).toBe(true);
@@ -383,6 +391,8 @@ describe("share link round-trip stability", () => {
     const first = decodeSharedState(encodeSharedState(original))!;
     const tenth = roundTripN(original, ROUND_TRIPS);
 
+    expect(first.vertices.length).toBe(original.vertices.length);
+    expect(tenth.vertices.length).toBe(original.vertices.length);
     expect(tenth.vertices.length).toBe(first.vertices.length);
     tenth.vertices.forEach((v, i) => {
       expect(v.x).toBeCloseTo(first.vertices[i]!.x, 10);
