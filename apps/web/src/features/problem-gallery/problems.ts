@@ -12,9 +12,9 @@ export type GalleryProblem = {
 
 type Rng = () => number;
 
-const RANDOM_POLYGON_MIN_VERTICES = 4;
-const RANDOM_POLYGON_MAX_VERTICES = 40;
-const DEFAULT_RANDOM_POLYGON_VERTICES = 20;
+const RANDOM_POLYGON_MIN_VERTICES = 3;
+const RANDOM_POLYGON_MAX_VERTICES = 50;
+const DEFAULT_RANDOM_POLYGON_VERTICES = 10;
 // Typed into the vertex prompt, asks for a random count each time
 const RANDOM_VERTEX_COUNT_INPUT = "-1";
 const RANDOM_POLYGON_SCALE = 24;
@@ -25,7 +25,7 @@ const RANDOM_POLYGON_MIN_FILL_RATIO = 0.04;
 const RANDOM_POLYGON_MAX_OFFSET_RATIO = 2;
 const RANDOM_POLYGON_OBJECTIVE_MAGNITUDE = 7;
 const RANDOM_POLYGON_OBJECTIVE_DIRECTIONS = 32;
-const RANDOM_POLYGON_PREVIEW_SEED = 0x5eed65;
+const RANDOM_POLYGON_PREVIEW_SEED = 0x5eed64;
 
 const regularPolygon = (count: number, radiusX: number, radiusY: number) =>
   Array.from({ length: count }, (_, index) => {
