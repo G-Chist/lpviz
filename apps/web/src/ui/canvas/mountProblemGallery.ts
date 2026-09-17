@@ -5,7 +5,12 @@ import { el } from "@/ui/dom";
 const IDLE = 3000,
   ITEM_W = 84,
   GAP = 8,
-  CHROME = 16;
+  CHROME = 16,
+  // the open strip's height, also handed to the viewport as the top inset
+  // zoom-to-fit must keep the region clear of (the CSS reads it as a variable)
+  EXPANDED_H = 96,
+  // breathing room between the strip's bottom edge and the fitted region
+  INSET_GAP = 8;
 // how often the random item's thumbnail changes shape while the strip is open
 const RESHUFFLE_MS = 1000;
 type Shape = Pick<GalleryProblem, "vertices" | "objectiveVector">;
@@ -96,6 +101,8 @@ export function mountProblemGallery(parent: HTMLElement, ctx: AppContext) {
     root.className = `problem-gallery ${expanded ? "is-expanded" : ""}`.trim();
     root.style.left = `calc(${sw}px + (100vw - ${sw}px) / 2)`;
     root.style.setProperty("--problem-gallery-expanded-width", `min(${GALLERY_PROBLEMS.length * ITEM_W + Math.max(0, GALLERY_PROBLEMS.length - 1) * GAP + CHROME}px, calc(100vw - ${sw}px - 120px))`);
+    root.style.setProperty("--problem-gallery-expanded-height", `${EXPANDED_H}px`);
+    ctx.services.viewport.setTopInset(expanded ? EXPANDED_H + INSET_GAP : 0);
     toggle.setAttribute("aria-expanded", String(expanded));
     items.setAttribute("aria-hidden", String(!expanded));
     for (const r of reshuffles) r.setRunning(expanded);
