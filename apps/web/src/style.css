@@ -225,24 +225,13 @@ body {
   stroke-linecap: round;
 }
 
-/* the random item: two shape layers crossfade while it reshuffles on hover,
-   and a die sits in the corner so it reads as "roll one" even at rest */
+/* the random item: two shape layers crossfade as it reshuffles */
 .problem-gallery__shape {
   transition: opacity 260ms ease;
 }
 
 .problem-gallery__shape.is-faded {
   opacity: 0;
-}
-
-.problem-gallery__die rect {
-  fill: #fafafa;
-  stroke: #333;
-  stroke-width: 1.5;
-}
-
-.problem-gallery__die circle {
-  fill: #333;
 }
 
 /* ================================

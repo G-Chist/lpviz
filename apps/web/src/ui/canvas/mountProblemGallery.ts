@@ -6,10 +6,8 @@ const IDLE = 3000,
   ITEM_W = 84,
   GAP = 8,
   CHROME = 16;
-// how often the random item's thumbnail changes shape while hovered
-const RESHUFFLE_MS = 700;
-// a five-pip die in the thumbnail's top-right corner, in the thumbnails' own stroke style
-const DIE_MARKUP = '<g class="problem-gallery__die"><rect x="45" y="2" width="13" height="13" rx="2.5"/><circle cx="48.5" cy="5.5" r="1.3"/><circle cx="54.5" cy="5.5" r="1.3"/><circle cx="51.5" cy="8.5" r="1.3"/><circle cx="48.5" cy="11.5" r="1.3"/><circle cx="54.5" cy="11.5" r="1.3"/></g>';
+// how often the random item's thumbnail changes shape while the strip is open
+const RESHUFFLE_MS = 1000;
 type Shape = Pick<GalleryProblem, "vertices" | "objectiveVector">;
 function pointsAttribute(problem: Pick<GalleryProblem, "vertices">) {
   const minX = Math.min(...problem.vertices.map((v) => v.x));
@@ -22,12 +20,15 @@ function pointsAttribute(problem: Pick<GalleryProblem, "vertices">) {
 }
 const shapeMarkup = (shape: Shape) => `<polygon points="${pointsAttribute(shape)}"/><line x1="30" y1="22" x2="${30 + shape.objectiveVector.x}" y2="${22 - shape.objectiveVector.y}"/>`;
 
-// The random item's thumbnail reshuffles while hovered: two shape layers
-// crossfade (SVG point lists cannot be transitioned, opacity can), a fresh
-// region every RESHUFFLE_MS, so the motion itself says what the die says.
-// Under reduced motion it reshuffles once per hover instead of cycling.
-function attachReshuffle(button: HTMLButtonElement): () => void {
+// The random item's thumbnail keeps reshuffling — a fresh region every
+// RESHUFFLE_MS, crossfaded between two shape layers since SVG point lists
+// cannot be transitioned but opacity can — so it is the one thing in the
+// strip that moves, which is what marks it as "roll a new one". It only runs
+// while the strip is open and the tab visible (nothing to see otherwise), and
+// not at all under prefers-reduced-motion.
+function createReshuffle(button: HTMLButtonElement) {
   const layers = button.querySelectorAll<SVGGElement>(".problem-gallery__shape");
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let front = 0;
   let timer: number | null = null;
   const reshuffle = () => {
@@ -41,15 +42,13 @@ function attachReshuffle(button: HTMLButtonElement): () => void {
     if (timer !== null) clearInterval(timer);
     timer = null;
   };
-  button.addEventListener("pointerenter", () => {
-    reshuffle();
+  const setRunning = (running: boolean) => {
     stop();
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (running && !reducedMotion.matches && document.visibilityState === "visible") {
       timer = window.setInterval(reshuffle, RESHUFFLE_MS);
     }
-  });
-  button.addEventListener("pointerleave", stop);
-  return stop;
+  };
+  return { setRunning, stop };
 }
 export function mountProblemGallery(parent: HTMLElement, ctx: AppContext) {
   let expanded = false;
@@ -72,16 +71,16 @@ export function mountProblemGallery(parent: HTMLElement, ctx: AppContext) {
     attrs: { "aria-hidden": "true" },
   });
   root.append(toggle, items);
-  const stopReshuffles: Array<() => void> = [];
+  const reshuffles: Array<ReturnType<typeof createReshuffle>> = [];
   for (const p of GALLERY_PROBLEMS) {
     const b = el("button", {
       className: "problem-gallery__item",
       attrs: { type: "button", title: p.name },
     });
     b.innerHTML = p.isRandom
-      ? `<svg class="problem-gallery__thumb" viewBox="0 0 60 44" aria-hidden="true"><g class="problem-gallery__shape">${shapeMarkup(p)}</g><g class="problem-gallery__shape is-faded"></g>${DIE_MARKUP}</svg><span>${p.name}</span>`
+      ? `<svg class="problem-gallery__thumb" viewBox="0 0 60 44" aria-hidden="true"><g class="problem-gallery__shape">${shapeMarkup(p)}</g><g class="problem-gallery__shape is-faded"></g></svg><span>${p.name}</span>`
       : `<svg class="problem-gallery__thumb" viewBox="0 0 60 44" aria-hidden="true">${shapeMarkup(p)}</svg><span>${p.name}</span>`;
-    if (p.isRandom) stopReshuffles.push(attachReshuffle(b));
+    if (p.isRandom) reshuffles.push(createReshuffle(b));
     b.addEventListener("click", () => {
       if (p.isRandom) {
         const generated = requestRandomConvexPolygonProblem();
@@ -99,7 +98,12 @@ export function mountProblemGallery(parent: HTMLElement, ctx: AppContext) {
     root.style.setProperty("--problem-gallery-expanded-width", `min(${GALLERY_PROBLEMS.length * ITEM_W + Math.max(0, GALLERY_PROBLEMS.length - 1) * GAP + CHROME}px, calc(100vw - ${sw}px - 120px))`);
     toggle.setAttribute("aria-expanded", String(expanded));
     items.setAttribute("aria-hidden", String(!expanded));
+    for (const r of reshuffles) r.setRunning(expanded);
   };
+  const onVisibility = () => {
+    for (const r of reshuffles) r.setRunning(expanded);
+  };
+  document.addEventListener("visibilitychange", onVisibility);
   let timer: number | null = window.setTimeout(() => {
     timer = null;
     expanded = true;
@@ -131,7 +135,8 @@ export function mountProblemGallery(parent: HTMLElement, ctx: AppContext) {
     update: render,
     destroy: () => {
       clearTimer();
-      for (const stop of stopReshuffles) stop();
+      for (const r of reshuffles) r.stop();
+      document.removeEventListener("visibilitychange", onVisibility);
       document.removeEventListener("click", firstClick);
       root.remove();
     },

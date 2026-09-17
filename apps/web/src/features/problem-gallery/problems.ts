@@ -159,7 +159,7 @@ function createRandomConvexPolygonProblem(count: number, rng: Rng = Math.random)
   const vertices = randomConvexPolygon(count, rng);
   return {
     id: "random-convex-polygon",
-    name: "Random Convex",
+    name: "Random",
     vertices,
     interiorPoint: convexCentroid(vertices),
     objectiveVector: randomObjective(rng),
@@ -210,7 +210,7 @@ export const GALLERY_PROBLEMS: GalleryProblem[] = [
   },
   {
     id: "corridor",
-    name: "Corridor",
+    name: "Hexagon",
     vertices: [
       { x: -12, y: -3 },
       { x: -8, y: 5 },
@@ -222,21 +222,21 @@ export const GALLERY_PROBLEMS: GalleryProblem[] = [
     interiorPoint: { x: 0, y: 0 },
     objectiveVector: { x: 9, y: 2 },
   },
-  {
-    id: "diamond",
-    name: "Diamond",
-    vertices: [
-      { x: 0, y: -9 },
-      { x: -10, y: 0 },
-      { x: 0, y: 9 },
-      { x: 10, y: 0 },
-    ],
-    interiorPoint: { x: 0, y: 0 },
-    objectiveVector: { x: 4, y: 8 },
-  },
+  // {
+  //   id: "diamond",
+  //   name: "Diamond",
+  //   vertices: [
+  //     { x: 0, y: -9 },
+  //     { x: -10, y: 0 },
+  //     { x: 0, y: 9 },
+  //     { x: 10, y: 0 },
+  //   ],
+  //   interiorPoint: { x: 0, y: 0 },
+  //   objectiveVector: { x: 4, y: 8 },
+  // },
   {
     id: "wide-box",
-    name: "Wide Box",
+    name: "Rectangle",
     vertices: [
       { x: -14, y: -4 },
       { x: -14, y: 4 },
@@ -257,6 +257,10 @@ export const GALLERY_PROBLEMS: GalleryProblem[] = [
     ],
     interiorPoint: { x: 0, y: 0 },
     objectiveVector: { x: 10, y: 0.1 },
+  },
+  {
+    ...createRandomConvexPolygonProblem(DEFAULT_RANDOM_POLYGON_VERTICES, mulberry32(RANDOM_POLYGON_PREVIEW_SEED)),
+    isRandom: true,
   },
   {
     id: "slanted-strip",
@@ -297,9 +301,5 @@ export const GALLERY_PROBLEMS: GalleryProblem[] = [
     ],
     interiorPoint: { x: -1, y: 0 },
     objectiveVector: { x: 10, y: 0.2 },
-  },
-  {
-    ...createRandomConvexPolygonProblem(DEFAULT_RANDOM_POLYGON_VERTICES, mulberry32(RANDOM_POLYGON_PREVIEW_SEED)),
-    isRandom: true,
   },
 ];
