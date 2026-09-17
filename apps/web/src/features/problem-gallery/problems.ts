@@ -18,6 +18,9 @@ const DEFAULT_RANDOM_POLYGON_VERTICES = 20;
 const RANDOM_POLYGON_SCALE = 24;
 const RANDOM_POLYGON_MAX_TRIES = 40;
 const RANDOM_POLYGON_MIN_FILL_RATIO = 0.04;
+// How far a generated region is slid away from the origin, as a fraction of
+// its own half-extent (see offsetFromOrigin).
+const RANDOM_POLYGON_MAX_OFFSET_RATIO = 2;
 const RANDOM_POLYGON_OBJECTIVE_MAGNITUDE = 7;
 const RANDOM_POLYGON_OBJECTIVE_DIRECTIONS = 32;
 const RANDOM_POLYGON_PREVIEW_SEED = 0x5eed65;
@@ -106,12 +109,32 @@ const isWellProportioned = (points: PointXY[]): boolean => {
   return Math.abs(signedArea(points)) / (width * height) >= RANDOM_POLYGON_MIN_FILL_RATIO;
 };
 
+// Where the region sits relative to the origin matters to the solvers: IPM
+// and PDHG start there, simplex leaves from there in Phase 1, and the start
+// marker defaults to it — so whether the origin is inside or outside the
+// region changes what a run looks like. Valtr's construction, normalized to
+// its bounding box, puts the origin deep inside every polygon. Sliding the
+// polygon by a random vector of up to twice its half-extent leaves the origin
+// outside roughly half the time while keeping the region within a couple of
+// widths of it (the gallery zooms to fit on load).
+const offsetFromOrigin = (points: PointXY[], rng: Rng): PointXY[] => {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const halfWidth = (Math.max(...xs) - Math.min(...xs)) / 2;
+  const halfHeight = (Math.max(...ys) - Math.min(...ys)) / 2;
+  const angle = rng() * 2 * Math.PI;
+  const ratio = rng() * RANDOM_POLYGON_MAX_OFFSET_RATIO;
+  const dx = ratio * halfWidth * Math.cos(angle);
+  const dy = ratio * halfHeight * Math.sin(angle);
+  return points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+};
+
 function randomConvexPolygon(count: number, rng: Rng = Math.random): PointXY[] {
   for (let attempt = 0; attempt < RANDOM_POLYGON_MAX_TRIES; attempt++) {
     const points = valtrPolygon(count, rng);
-    if (isWellProportioned(points)) return points;
+    if (isWellProportioned(points)) return offsetFromOrigin(points, rng);
   }
-  return valtrPolygon(count, rng);
+  return offsetFromOrigin(valtrPolygon(count, rng), rng);
 }
 
 const randomObjective = (rng: Rng): PointXY => {
