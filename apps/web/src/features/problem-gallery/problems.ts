@@ -25,6 +25,11 @@ const RANDOM_POLYGON_MIN_FILL_RATIO = 0.04;
 const RANDOM_POLYGON_MAX_OFFSET_RATIO = 2;
 const RANDOM_POLYGON_OBJECTIVE_MAGNITUDE = 7;
 const RANDOM_POLYGON_OBJECTIVE_DIRECTIONS = 32;
+// Thumbnail previews use few vertices: a 20-gon is a blob at 54 pixels wide,
+// and the gallery item reshuffles through these while hovered, so a visibly
+// different vertex count each time is part of what says "random".
+const RANDOM_POLYGON_PREVIEW_MIN_VERTICES = 5;
+const RANDOM_POLYGON_PREVIEW_MAX_VERTICES = 12;
 const RANDOM_POLYGON_PREVIEW_SEED = 0x5eed64;
 
 const regularPolygon = (count: number, radiusX: number, radiusY: number) =>
@@ -168,6 +173,12 @@ const randomVertexCount = (rng: Rng): number => RANDOM_POLYGON_MIN_VERTICES + Ma
 // drawing fresh regions of that size without retyping it — and remembering
 // "-1" the same way keeps drawing regions of a fresh random size.
 let lastVertexCountInput = String(DEFAULT_RANDOM_POLYGON_VERTICES);
+
+/** A fresh thumbnail-sized region and objective, for the gallery item's hover reshuffle. */
+export function randomConvexPolygonPreview(rng: Rng = Math.random): Pick<GalleryProblem, "vertices" | "objectiveVector"> {
+  const count = RANDOM_POLYGON_PREVIEW_MIN_VERTICES + Math.floor(rng() * (RANDOM_POLYGON_PREVIEW_MAX_VERTICES - RANDOM_POLYGON_PREVIEW_MIN_VERTICES + 1));
+  return { vertices: randomConvexPolygon(count, rng), objectiveVector: randomObjective(rng) };
+}
 
 export function requestRandomConvexPolygonProblem(): GalleryProblem | null {
   const input = window.prompt(`Number of vertices (${RANDOM_POLYGON_MIN_VERTICES}-${RANDOM_POLYGON_MAX_VERTICES}, or ${RANDOM_VERTEX_COUNT_INPUT} for random):`, lastVertexCountInput);
