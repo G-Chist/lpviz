@@ -159,14 +159,21 @@ function createRandomConvexPolygonProblem(count: number, rng: Rng = Math.random)
   };
 }
 
+// The prompt offers the previous answer as its default, so once a vertex
+// count is chosen, Random Convex → Enter → Random Convex → Enter keeps
+// drawing fresh regions of that size without retyping it.
+let lastVertexCountInput = String(DEFAULT_RANDOM_POLYGON_VERTICES);
+
 export function requestRandomConvexPolygonProblem(): GalleryProblem | null {
-  const input = window.prompt(`Number of vertices (${RANDOM_POLYGON_MIN_VERTICES}-${RANDOM_POLYGON_MAX_VERTICES}):`, String(DEFAULT_RANDOM_POLYGON_VERTICES));
+  const input = window.prompt(`Number of vertices (${RANDOM_POLYGON_MIN_VERTICES}-${RANDOM_POLYGON_MAX_VERTICES}):`, lastVertexCountInput);
   if (input === null) return null;
-  const count = Number.parseInt(input, 10);
-  if (count < RANDOM_POLYGON_MIN_VERTICES || count > RANDOM_POLYGON_MAX_VERTICES || String(count) !== input.trim()) {
+  const trimmed = input.trim();
+  const count = Number.parseInt(trimmed, 10);
+  if (count < RANDOM_POLYGON_MIN_VERTICES || count > RANDOM_POLYGON_MAX_VERTICES || String(count) !== trimmed) {
     window.alert(`Vertex count must be an integer between ${RANDOM_POLYGON_MIN_VERTICES} and ${RANDOM_POLYGON_MAX_VERTICES}.`);
     return null;
   }
+  lastVertexCountInput = trimmed;
   return createRandomConvexPolygonProblem(count);
 }
 
