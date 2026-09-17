@@ -15,6 +15,8 @@ type Rng = () => number;
 const RANDOM_POLYGON_MIN_VERTICES = 4;
 const RANDOM_POLYGON_MAX_VERTICES = 40;
 const DEFAULT_RANDOM_POLYGON_VERTICES = 20;
+// Typed into the vertex prompt, asks for a random count each time
+const RANDOM_VERTEX_COUNT_INPUT = "-1";
 const RANDOM_POLYGON_SCALE = 24;
 const RANDOM_POLYGON_MAX_TRIES = 40;
 const RANDOM_POLYGON_MIN_FILL_RATIO = 0.04;
@@ -159,18 +161,22 @@ function createRandomConvexPolygonProblem(count: number, rng: Rng = Math.random)
   };
 }
 
+const randomVertexCount = (rng: Rng): number => RANDOM_POLYGON_MIN_VERTICES + Math.floor(rng() * (RANDOM_POLYGON_MAX_VERTICES - RANDOM_POLYGON_MIN_VERTICES + 1));
+
 // The prompt offers the previous answer as its default, so once a vertex
 // count is chosen, Random Convex → Enter → Random Convex → Enter keeps
-// drawing fresh regions of that size without retyping it.
+// drawing fresh regions of that size without retyping it — and remembering
+// "-1" the same way keeps drawing regions of a fresh random size.
 let lastVertexCountInput = String(DEFAULT_RANDOM_POLYGON_VERTICES);
 
 export function requestRandomConvexPolygonProblem(): GalleryProblem | null {
-  const input = window.prompt(`Number of vertices (${RANDOM_POLYGON_MIN_VERTICES}-${RANDOM_POLYGON_MAX_VERTICES}):`, lastVertexCountInput);
+  const input = window.prompt(`Number of vertices (${RANDOM_POLYGON_MIN_VERTICES}-${RANDOM_POLYGON_MAX_VERTICES}, or ${RANDOM_VERTEX_COUNT_INPUT} for random):`, lastVertexCountInput);
   if (input === null) return null;
   const trimmed = input.trim();
-  const count = Number.parseInt(trimmed, 10);
-  if (count < RANDOM_POLYGON_MIN_VERTICES || count > RANDOM_POLYGON_MAX_VERTICES || String(count) !== trimmed) {
-    window.alert(`Vertex count must be an integer between ${RANDOM_POLYGON_MIN_VERTICES} and ${RANDOM_POLYGON_MAX_VERTICES}.`);
+  const wantsRandomCount = trimmed === RANDOM_VERTEX_COUNT_INPUT;
+  const count = wantsRandomCount ? randomVertexCount(Math.random) : Number.parseInt(trimmed, 10);
+  if (count < RANDOM_POLYGON_MIN_VERTICES || count > RANDOM_POLYGON_MAX_VERTICES || (!wantsRandomCount && String(count) !== trimmed)) {
+    window.alert(`Vertex count must be an integer between ${RANDOM_POLYGON_MIN_VERTICES} and ${RANDOM_POLYGON_MAX_VERTICES}, or ${RANDOM_VERTEX_COUNT_INPUT} for a random count.`);
     return null;
   }
   lastVertexCountInput = trimmed;
