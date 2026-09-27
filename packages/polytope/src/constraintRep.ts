@@ -44,7 +44,10 @@ export function formatConstraint(A: number, B: number, C: number): string {
 // Which way an open chain turns, as -1 (right), +1 (left) or 0 (no consistent
 // turn: collinear, or turning both ways). The natural normal (A = dy, B = -dx)
 // already puts the interior on the <= side of a left-turning chain, so this is
-// all that is needed to orient every edge the same way round.
+// all that is needed to orient every edge the same way round. A turn counts
+// when the sine of its angle exceeds `tol` — a test on the raw cross product
+// would have units of length squared and call every turn of a small chain
+// collinear, silently handing those chains back to the centroid rule.
 //
 // Reading the side off a reference point instead is unsound for an open chain:
 // the reference is a mean over all the points, so one distant vertex can drag
@@ -66,7 +69,9 @@ function chainTurnSign(points: Vertices, tol: number): -1 | 0 | 1 {
     const bx = c[0] - b[0];
     const by = c[1] - b[1];
     const cross = ax * by - ay * bx;
-    if (Math.abs(cross) <= tol) continue;
+    if (Math.abs(cross) <= tol * Math.hypot(ax, ay) * Math.hypot(bx, by)) {
+      continue;
+    }
     const next = Math.sign(cross);
     if (sign === 0) sign = next;
     else if (next !== sign) return 0;

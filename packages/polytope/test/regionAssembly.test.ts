@@ -62,33 +62,43 @@ describe("open chain half-plane orientation", () => {
   // Reported against this share link, a four-node chain whose first node sat
   // far outside the triangle the rest described:
   //   https://lpviz.net/?s=AsIABJCr0QH0nI4B78iOApm_qQH0rSmGziCbrAn1xArq284D6q7OBWQA
-  const FAR_Flung_CHAIN: Vertices = [
+  const FAR_FLUNG_CHAIN: Vertices = [
     [171.4888, 116.5114],
     [-50.1616, -22.3379],
     [-16.2806, 4.376],
     [-23.9364, -4.2571],
   ];
 
+  // the chain's nodes that lie outside one of its own half-planes, as
+  // "node index / line index" pairs
   const violating = (chain: Vertices) => {
     const { lines } = buildConstraintRep(chain, false);
-    const out: number[] = [];
-    chain.forEach(([x, y]) => {
-      lines.forEach(([A, B, C]) => {
-        const excess = A * x + B * y - C;
-        if (excess > 1e-6) out.push(excess);
+    const out: string[] = [];
+    chain.forEach(([x, y], node) => {
+      lines.forEach(([A, B, C], line) => {
+        if (A * x + B * y - C > 1e-6) out.push(`v${node}/line${line}`);
       });
     });
     return out;
   };
 
   test("a distant node cannot flip a neighbouring edge's half-plane", () => {
-    // v1 sits on the last edge's extension but was excluded by it: the third
-    // edge's half-plane was facing outward
-    expect(violating(FAR_Flung_CHAIN).length).toBe(1);
-    expect(buildConstraintRep(FAR_Flung_CHAIN, false).lines[2]![0]).toBeCloseTo(
-      0.748186,
-      5,
-    );
+    // Nodes 1 to 3 lie inside every half-plane. Node 0 is the distant one:
+    // it sits past the point where the chain's end rays cross, so it is
+    // genuinely outside the region the last edge bounds — the one exclusion
+    // the geometry itself demands, not a flipped half-plane.
+    expect(violating(FAR_FLUNG_CHAIN)).toEqual(["v0/line2"]);
+  });
+
+  test("the orientation does not depend on the chain's scale", () => {
+    // a turn test on the raw cross product reads every turn of a tiny chain as
+    // collinear and falls back to the centroid rule, which is exactly what
+    // flipped the half-plane above; the same chain at any size must orient
+    // the same way
+    for (const scale of [1e-5, 1e-3, 1e3]) {
+      const scaled: Vertices = FAR_FLUNG_CHAIN.map(([x, y]) => [x * scale, y * scale]);
+      expect(violating(scaled)).toEqual(["v0/line2"]);
+    }
   });
 
   test("each edge's half-plane contains the next node along the chain", () => {
@@ -149,11 +159,19 @@ describe("open chain half-plane orientation", () => {
   });
 
   test("a collinear chain keeps its previous orientation", () => {
+    // no turn to read, so the centroid rule decides as before: both edges keep
+    // the region above the x-axis (the natural normal for a +x edge is -y)
     const flat: Vertices = [
       [0, 0],
       [1, 0],
       [2, 0],
     ];
-    expect(buildConstraintRep(flat, false).lines.length).toBe(2);
+    const { lines } = buildConstraintRep(flat, false);
+    expect(lines.length).toBe(2);
+    for (const [A, B, C] of lines) {
+      expect(A).toBeCloseTo(0, 9);
+      expect(B).toBeLessThan(0);
+      expect(C).toBeCloseTo(0, 9);
+    }
   });
 });
