@@ -18,6 +18,7 @@ import {
   getEditorTransition,
 } from "@/features/polytope-editor/editorSession";
 import {
+  EDGE_HIT_RADIUS_PX,
   exceedsDragThreshold,
   findBoundaryRayNearPoint,
   findEdgeNearPoint,
@@ -26,6 +27,7 @@ import {
   getLocalFromClient,
   getLogicalFromClient,
   solverStartNearLocalPoint,
+  worldDistanceForPixels,
   type ConstraintDragTarget,
 } from "@/features/polytope-editor/interactionState";
 import { stepReplayDurationMs } from "@/features/solver/replayDuration";
@@ -78,19 +80,6 @@ export function attachCanvasInteractions({
     typeof window.matchMedia === "function" &&
     window.matchMedia("(pointer: coarse)").matches;
   const CLOSE_HIT_RADIUS_PX = coarsePointer ? 24 : 12;
-
-  // The editor's close test is in world units; convert the pixel radius to a
-  // world distance at `worldPoint` so it stays constant on screen across zoom
-  // levels (a fixed world threshold becomes an unhittable target when zoomed
-  // out, which is the usual case on mobile).
-  const worldDistanceForPixels = (worldPoint: PointXY, pixels: number) => {
-    const canvasPoint = canvasManager.toCanvasCoords(worldPoint.x, worldPoint.y);
-    const shifted = canvasManager.toLogicalCoords(
-      canvasPoint.x + pixels,
-      canvasPoint.y,
-    );
-    return Math.hypot(shifted.x - worldPoint.x, shifted.y - worldPoint.y);
-  };
 
   // pen and touch share the same "has this gesture drifted far enough to be a
   // drag rather than a tap" test, latched onto the gesture's start record
@@ -634,6 +623,7 @@ export function attachCanvasInteractions({
       logicalMouse,
       displayVertices,
       displayMode,
+      worldDistanceForPixels(canvasManager, logicalMouse, EDGE_HIT_RADIUS_PX),
     );
     if (edgeIndex !== null) {
       const insertion = getEditorTransition(state, {
@@ -712,7 +702,11 @@ export function attachCanvasInteractions({
         getEditorTransition(state, {
           kind: "click",
           point,
-          closeThreshold: worldDistanceForPixels(point, CLOSE_HIT_RADIUS_PX),
+          closeThreshold: worldDistanceForPixels(
+            canvasManager,
+            point,
+            CLOSE_HIT_RADIUS_PX,
+          ),
         }),
       );
     }

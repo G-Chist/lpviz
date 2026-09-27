@@ -13,6 +13,11 @@ const VERTEX_HIT_RADIUS = 12;
 // tighter than the vertex radius: in simplex mode the marker sits on a
 // vertex, and grabbing just outside the ring must still drag the vertex
 const SOLVER_START_HIT_RADIUS = 10;
+// How close, on screen, a pointer must be to an edge to pick it. Edges are
+// tested in world units, so callers convert this with worldDistanceForPixels;
+// a fixed world tolerance was hundreds of pixels wide zoomed in on a small
+// region and under a pixel zoomed out (see #71).
+export const EDGE_HIT_RADIUS_PX = 10;
 const DRAG_THRESHOLD_PX = 5;
 const EPS = 1e-10;
 
@@ -53,46 +58,39 @@ export function findVertexNearLocalPoint(
   });
 }
 
+/**
+ * The world distance that `pixels` on screen spans at `worldPoint`. Hit tests
+ * on world geometry take a world tolerance, and converting a pixel radius at
+ * the pointer keeps the target the same size on screen at every zoom level —
+ * a fixed world radius is unhittable zoomed out (the usual case on mobile)
+ * and covers most of a small region zoomed in.
+ */
+export function worldDistanceForPixels(
+  canvasManager: ViewportApi,
+  worldPoint: PointXY,
+  pixels: number,
+): number {
+  const canvasPoint = canvasManager.toCanvasCoords(worldPoint.x, worldPoint.y);
+  const shifted = canvasManager.toLogicalCoords(
+    canvasPoint.x + pixels,
+    canvasPoint.y,
+  );
+  return Math.hypot(shifted.x - worldPoint.x, shifted.y - worldPoint.y);
+}
+
+// The nearest edge within `tolerance` (world units); a draft or open chain
+// has no closing edge.
 export function findEdgeNearPoint(
   point: PointXY,
   vertices: PointXY[],
   completionMode: "draft" | "closed" | "open",
   tolerance = 0.5,
 ): number | null {
-  const edgeCount =
-    completionMode === "closed"
-      ? vertices.length
-      : Math.max(0, vertices.length - 1);
-  // a small polytope seen up close puts several edges inside the tolerance at
-  // once, so pick the closest rather than whichever comes first in index order
-  let nearestIndex: number | null = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (let index = 0; index < edgeCount; index++) {
-    const start = vertices[index];
-    const end =
-      vertices[index + 1] ??
-      (completionMode === "closed" ? vertices[0] : undefined);
-    if (!start || !end) continue;
-
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const len2 = dx * dx + dy * dy;
-    if (len2 === 0) continue;
-
-    const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2;
-    if (t < 0 || t > 1) continue;
-
-    const distance = Math.hypot(
-      point.x - (start.x + t * dx),
-      point.y - (start.y + t * dy),
-    );
-    if (distance < tolerance && distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestIndex = index;
-    }
-  }
-  return nearestIndex;
+  return VRep.fromPoints(vertices).findEdgeNearPoint(
+    point,
+    tolerance,
+    completionMode === "closed",
+  );
 }
 
 function getVisibleBounds(canvasManager: ViewportApi): Bounds {
@@ -205,6 +203,11 @@ export function getDragStartTarget(
   const logicalCoords = getLogicalFromClient(canvasManager, clientX, clientY);
   const local = getLocalFromClient(canvasManager, clientX, clientY);
   const { session } = getEditorContext(state);
+  const edgeTolerance = worldDistanceForPixels(
+    canvasManager,
+    logicalCoords,
+    EDGE_HIT_RADIUS_PX,
+  );
 
   if (session.kind === "drafting") {
     const index = findVertexNearLocalPoint(
@@ -268,7 +271,7 @@ export function getDragStartTarget(
 
   if (session.kind === "editing-closed" && state.vertices.length >= 3) {
     const polytope = VRep.fromPoints(state.vertices);
-    const edgeIndex = polytope.findEdgeNearPoint(logicalCoords);
+    const edgeIndex = polytope.findEdgeNearPoint(logicalCoords, edgeTolerance);
     if (edgeIndex !== null) {
       const lineContext = state.polytope?.lines;
       if (!lineContext || lineContext.length === 0) return null;
@@ -296,7 +299,12 @@ export function getDragStartTarget(
     const lineContext = state.polytope?.lines;
     if (!lineContext || lineContext.length === 0) return null;
 
-    const edgeIndex = findEdgeNearPoint(logicalCoords, state.vertices, "open");
+    const edgeIndex = findEdgeNearPoint(
+      logicalCoords,
+      state.vertices,
+      "open",
+      edgeTolerance,
+    );
     if (edgeIndex !== null) {
       const line = lineContext[edgeIndex];
       if (!line) return null;

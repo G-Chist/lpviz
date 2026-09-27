@@ -54,13 +54,24 @@ describe("findEdgeNearPoint", () => {
     expect(findEdgeNearPoint(point, SMALL_SQUARE, "open")).not.toBe(3);
   });
 
-  test("returns null when the point is past every edge end", () => {
+  test("an exact tie between edges goes to the lowest index", () => {
+    // the centre of the square is 0.15 from the bottom, right and top edges
     expect(
       findEdgeNearPoint({ x: 0.15, y: 0.15 }, SMALL_SQUARE, "draft"),
     ).toBe(0);
+  });
+
+  test("returns null when no edge is within tolerance", () => {
     expect(
       findEdgeNearPoint({ x: -1, y: 0.15 }, SMALL_SQUARE, "closed"),
     ).toBeNull();
+  });
+
+  test("the tolerance is in world units, so a tighter one drops far edges", () => {
+    // 0.02 from the left edge and 0.13 from the top: only the left edge
+    // survives a 0.05 tolerance
+    expect(findEdgeNearPoint({ x: 0.02, y: 0.17 }, SMALL_SQUARE, "closed", 0.05)).toBe(3);
+    expect(findEdgeNearPoint({ x: 0.1, y: 0.17 }, SMALL_SQUARE, "closed", 0.05)).toBeNull();
   });
 
   test("still picks the right edge for a large polytope", () => {

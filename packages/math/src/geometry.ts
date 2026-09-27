@@ -180,9 +180,16 @@ export class VRep {
     return inside;
   }
 
-  distanceToEdge(point: PointXY, edgeIndex: number): number {
+  /**
+   * Distance from `point` to edge `edgeIndex`, or +Infinity when the point's
+   * projection falls outside the segment, the edge is degenerate, or the edge
+   * does not exist (the closing edge of a polyline, with `closed` false).
+   */
+  distanceToEdge(point: PointXY, edgeIndex: number, closed = true): number {
     const start = this.points[edgeIndex];
-    const end = this.points[(edgeIndex + 1) % this.points.length];
+    const end = closed
+      ? this.points[(edgeIndex + 1) % this.points.length]
+      : this.points[edgeIndex + 1];
     if (!start || !end) return Number.POSITIVE_INFINITY;
 
     const dx = end.x - start.x;
@@ -200,14 +207,24 @@ export class VRep {
     return this.distanceToEdge(point, edgeIndex) < tolerance;
   }
 
-  findEdgeNearPoint(point: PointXY, tolerance = 0.5): number | null {
-    // a small polytope seen up close puts several edges inside the tolerance
-    // at once, so pick the closest rather than the first in index order
+  /**
+   * The edge within `tolerance` of `point`, nearest first: a small polytope
+   * seen up close puts several edges inside the tolerance at once, and the
+   * first in index order is the wrong one as often as not. `closed` false
+   * treats the points as a polyline and never tests the last→first chord.
+   */
+  findEdgeNearPoint(
+    point: PointXY,
+    tolerance = 0.5,
+    closed = true,
+  ): number | null {
     let nearestIndex: number | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
-
-    for (let i = 0; i < this.points.length; i++) {
-      const distance = this.distanceToEdge(point, i);
+    const edgeCount = closed
+      ? this.points.length
+      : Math.max(0, this.points.length - 1);
+    for (let i = 0; i < edgeCount; i++) {
+      const distance = this.distanceToEdge(point, i, closed);
       if (distance < tolerance && distance < nearestDistance) {
         nearestDistance = distance;
         nearestIndex = i;
